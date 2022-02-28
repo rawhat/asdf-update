@@ -4,34 +4,40 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
 	"regexp"
 	"strings"
 )
 
-var pkg = regexp.MustCompile("(.*) (.*)\n")
+var currentPattern = regexp.MustCompile("^.*\\s+([\\d\\w\\.\\-]+).*$")
 
 func main() {
-  // TODO:  don't do this...
-  // just do `asdf plugin list` and then `asdf current ${pkg}`
-	home := os.Getenv("HOME")
-	toolVersions := path.Join(home, ".tool-versions")
-
-	contents, err := os.ReadFile(toolVersions)
+	pluginsOutput, err := exec.Command("asdf", "plugin", "list").Output()
 	if err != nil {
-		panic(fmt.Errorf("Failed to read tool versions:  %w", err))
+		panic(fmt.Errorf("Failed to list `asdf` plugins:  %w", err))
 	}
 
-	var pkgErrors []string
-	matches := pkg.FindAllStringSubmatch(string(contents), -1)
-	for _, match := range matches {
-		plugin := string(match[1])
-		currentVersion := strings.TrimSpace(match[2])
+	plugins := strings.TrimSpace(string(pluginsOutput))
 
-    if currentVersion == "system" {
-      fmt.Printf("Skipping system plugin %s\n", plugin)
-      continue
-    }
+	var pkgErrors []string
+
+	for _, plugin := range strings.Split(plugins, "\n") {
+		var currentVersion string
+
+		currentOutput, err := exec.Command("asdf", "current", plugin).Output()
+		if err != nil {
+			fmt.Printf("No current version for %s\n", plugin)
+		} else {
+			trimmedOutput := strings.TrimSpace(string(currentOutput))
+			matches := currentPattern.FindStringSubmatch(trimmedOutput)
+			if len(matches) > 1 {
+				currentVersion = matches[1]
+			}
+		}
+
+		if currentVersion == "system" {
+			fmt.Printf("Skipping system plugin %s\n", plugin)
+			continue
+		}
 
 		latestVersion, err := exec.Command("asdf", "latest", plugin).Output()
 		if err != nil {
@@ -40,30 +46,29 @@ func main() {
 			continue
 		}
 		latest := strings.TrimSpace(string(latestVersion))
-    if latest == currentVersion {
-      fmt.Printf("Not updating %s (%s)\n", plugin, currentVersion)
-      continue
-    }
+		if latest == currentVersion {
+			fmt.Printf("Not updating %s (%s)\n", plugin, currentVersion)
+			continue
+		}
 
 		var (
 			install   = exec.Command("asdf", "install", plugin, latest)
-			uninstall = exec.Command("asdf", "uninstall", plugin, string(currentVersion))
+			uninstall = exec.Command("asdf", "uninstall", plugin, currentVersion)
 			global    = exec.Command("asdf", "global", plugin, latest)
 		)
 
-		fmt.Printf("Updating %s to %s\n", plugin, latest)
-
-    install.Stdout = os.Stdout
-    install.Stderr = os.Stderr
+		install.Stdout = os.Stdout
 		err = install.Run()
 		if err != nil {
 			fmt.Println(fmt.Errorf("Failed to install:  %w", err))
 			continue
 		}
-		err = uninstall.Run()
-		if err != nil {
-			fmt.Println(fmt.Errorf("Failed to uninstall:  %w", err))
-			continue
+		if currentVersion != "" {
+			err = uninstall.Run()
+			if err != nil {
+				fmt.Println(fmt.Errorf("Failed to uninstall:  %w", err))
+				continue
+			}
 		}
 		err = global.Run()
 		if err != nil {
@@ -73,6 +78,6 @@ func main() {
 	}
 
 	if len(pkgErrors) != 0 {
-    os.Exit(1)
+		os.Exit(1)
 	}
 }
