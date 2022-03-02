@@ -25,7 +25,7 @@ func main() {
 
 		currentOutput, err := exec.Command("asdf", "current", plugin).Output()
 		if err != nil {
-			fmt.Printf("No current version for %s\n", plugin)
+			fmt.Printf("No current version for %s\n", pluginFmt(plugin))
 		} else {
 			trimmedOutput := strings.TrimSpace(string(currentOutput))
 			matches := currentPattern.FindStringSubmatch(trimmedOutput)
@@ -35,21 +35,23 @@ func main() {
 		}
 
 		if currentVersion == "system" {
-			fmt.Printf("Skipping system plugin %s\n", plugin)
+			fmt.Printf("Skipping system plugin %s\n", pluginFmt(plugin))
 			continue
 		}
 
 		latestVersion, err := exec.Command("asdf", "latest", plugin).Output()
 		if err != nil {
-			fmt.Println(fmt.Errorf("Failed to get latest for %s:  %w", plugin, err))
+			fmt.Println(fmt.Errorf("Failed to get latest for %s:  %w", pluginFmt(plugin), err))
 			pkgErrors = append(pkgErrors, plugin)
 			continue
 		}
 		latest := strings.TrimSpace(string(latestVersion))
 		if latest == currentVersion {
-			fmt.Printf("Not updating %s (%s)\n", plugin, currentVersion)
+			fmt.Printf("Not updating %s (%s)\n", pluginFmt(plugin), versionFmt(currentVersion))
 			continue
 		}
+
+		fmt.Printf("Installing version %s of %s\n", versionFmt(latest), pluginFmt(plugin))
 
 		var (
 			install   = exec.Command("asdf", "install", plugin, latest)
@@ -64,12 +66,14 @@ func main() {
 			continue
 		}
 		if currentVersion != "" {
+			fmt.Printf("Uninstalling version %s\n", versionFmt(currentVersion))
 			err = uninstall.Run()
 			if err != nil {
 				fmt.Println(fmt.Errorf("Failed to uninstall:  %w", err))
 				continue
 			}
 		}
+		fmt.Printf("Setting global version to %s\n", versionFmt(latest))
 		err = global.Run()
 		if err != nil {
 			fmt.Println(fmt.Errorf("Failed to set global:  %w", err))
@@ -80,4 +84,12 @@ func main() {
 	if len(pkgErrors) != 0 {
 		os.Exit(1)
 	}
+}
+
+func versionFmt(vsn string) string {
+	return fmt.Sprintf("\033[30;32m%s\033[0m", vsn)
+}
+
+func pluginFmt(plug string) string {
+	return fmt.Sprintf("\033[30;34m%s\033[0m", plug)
 }
