@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,9 +9,24 @@ import (
 	"strings"
 )
 
+type stringsFlag []string
+
+func (flags *stringsFlag) String() string {
+	return strings.Join(*flags, " ")
+}
+
+func (flags *stringsFlag) Set(value string) error {
+	*flags = append(*flags, value)
+	return nil
+}
+
 var currentPattern = regexp.MustCompile("^.*\\s+([\\d\\w\\.\\-]+).*$")
+var ignores stringsFlag
 
 func main() {
+	flag.Var(&ignores, "ignore", "Plugin to ignore, can be repeated")
+	flag.Parse()
+
 	pluginsOutput, err := exec.Command("asdf", "plugin", "list").Output()
 	if err != nil {
 		panic(fmt.Errorf("Failed to list `asdf` plugins:  %w", err))
@@ -21,6 +37,18 @@ func main() {
 	var pkgErrors []string
 
 	for _, plugin := range strings.Split(plugins, "\n") {
+		isIgnored := false
+		for _, ignore := range ignores {
+			if plugin == ignore {
+				isIgnored = true
+				break
+			}
+		}
+		if isIgnored {
+			fmt.Printf("Ignoring plugin %s\n", pluginFmt(plugin))
+			continue
+		}
+
 		var currentVersion string
 
 		currentOutput, err := exec.Command("asdf", "current", plugin).Output()
@@ -36,6 +64,10 @@ func main() {
 
 		if currentVersion == "system" {
 			fmt.Printf("Skipping system plugin %s\n", pluginFmt(plugin))
+			continue
+		}
+		if currentVersion == "master" || currentVersion == "nightly" {
+			fmt.Printf("Not updating nightly/master version %s\n", pluginFmt(plugin))
 			continue
 		}
 
