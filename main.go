@@ -20,11 +20,15 @@ func (flags *stringsFlag) Set(value string) error {
 	return nil
 }
 
-var currentPattern = regexp.MustCompile("^.*\\s+([\\d\\w\\.\\-]+).*$")
-var ignores stringsFlag
+var (
+	currentPattern = regexp.MustCompile("^.*\\s+([\\d\\w\\.\\-]+).*$")
+	ignores        stringsFlag
+	only           stringsFlag
+)
 
 func main() {
 	flag.Var(&ignores, "ignore", "Plugin to ignore, can be repeated")
+	flag.Var(&only, "only", "Update provided plugin(s) only")
 	flag.Parse()
 
 	pluginsOutput, err := exec.Command("asdf", "plugin", "list").Output()
@@ -37,15 +41,14 @@ func main() {
 	var pkgErrors []string
 
 	for _, plugin := range strings.Split(plugins, "\n") {
-		isIgnored := false
-		for _, ignore := range ignores {
-			if plugin == ignore {
-				isIgnored = true
-				break
-			}
-		}
+		isIgnored := includes(ignores, plugin)
 		if isIgnored {
 			fmt.Printf("Ignoring plugin %s\n", pluginFmt(plugin))
+			continue
+		}
+		if len(only) > 0 && !includes(only, plugin) {
+			// I am choosing not to log here, since that would be noisy for how 'only'
+			// works
 			continue
 		}
 
@@ -124,4 +127,13 @@ func versionFmt(vsn string) string {
 
 func pluginFmt(plug string) string {
 	return fmt.Sprintf("\033[30;34m%s\033[0m", plug)
+}
+
+func includes(pluginList []string, plugin string) bool {
+	for _, item := range pluginList {
+		if item == plugin {
+			return true
+		}
+	}
+	return false
 }
